@@ -48,28 +48,23 @@ def login_user(username, password):
         return user
     return None
 
-# ===================== BOT =====================
+# ===================== BOT SIMPLES =====================
 sound_up_b64 = "UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQgAAAAA"
 sound_down_b64 = "UklGRigAAABXQVZFZm10IBAAAAABAAEAESsAACJWAAACABAAZGF0YQgAAAAA"
 
 def play_sound(sound_b64):
     audio_bytes = base64.b64decode(sound_b64)
-    placeholder_audio = st.empty()
-    placeholder_audio.audio(io.BytesIO(audio_bytes), format="audio/wav", start_time=0, key=f"audio_{np.random.randint(0,10000)}")
+    st.audio(io.BytesIO(audio_bytes), format="audio/wav", start_time=0)
 
 def show_signal_alert(signal: str, confidence: float, min_conf: float = 70):
     color_map = {"SUBIDA 🔼": "#1db954", "DESCIDA 🔽": "#e63946", "NEUTRAL ⚪": "#6c757d"}
     pulse_class = "pulse-green" if "SUBIDA" in signal else "pulse-red" if "DESCIDA" in signal else ""
     color = color_map.get(signal, "#6c757d")
-    placeholder_alert = st.empty()
-    placeholder_alert.markdown(
+    st.markdown(
         f"""
         <div class="{pulse_class}" style='background-color:{color};
         padding:1.3rem;border-radius:1rem;text-align:center;
-        color:white;font-size:1.6rem;' key="{np.random.randint(0,10000)}">
-        <b>{signal}</b><br>
-        Confiança: {confidence:.2f}%
-        </div>
+        color:white;font-size:1.6rem;'>{signal}<br>Confiança: {confidence:.2f}%</div>
         """, unsafe_allow_html=True)
     if confidence >= min_conf:
         if "SUBIDA" in signal:
@@ -77,13 +72,23 @@ def show_signal_alert(signal: str, confidence: float, min_conf: float = 70):
         elif "DESCIDA" in signal:
             play_sound(sound_down_b64)
 
+# ===================== FETCH DATA =====================
 def fetch_crypto(symbol="BTC/USDT", exchange_name='binance', timeframe='15m', limit=300):
-    exchange = getattr(ccxt, exchange_name)({'enableRateLimit': True})
-    data = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
-    df = pd.DataFrame(data, columns=['ts','open','high','low','close','volume'])
-    df['ts'] = pd.to_datetime(df['ts'], unit='ms')
-    df.set_index('ts', inplace=True)
-    return df
+    try:
+        exchange = getattr(ccxt, exchange_name)({'enableRateLimit': True})
+        data = exchange.fetch_ohlcv(symbol, timeframe=timeframe, limit=limit)
+        df = pd.DataFrame(data, columns=['ts','open','high','low','close','volume'])
+        df['ts'] = pd.to_datetime(df['ts'], unit='ms')
+        df.set_index('ts', inplace=True)
+        return df
+    except Exception as e:
+        st.warning(f"⚠️ Não foi possível acessar {exchange_name}. Usando dados simulados.")
+        date_rng = pd.date_range(end=datetime.now(), periods=limit, freq='15T')
+        price = np.cumsum(np.random.randn(limit)*50) + 50000
+        df = pd.DataFrame({'ts': date_rng, 'open': price, 'high': price+200, 'low': price-200,
+                           'close': price, 'volume': np.random.randint(100,500, size=limit)})
+        df.set_index('ts', inplace=True)
+        return df
 
 def fetch_forex(symbol="EUR/USD", timeframe='15m', limit=300):
     date_rng = pd.date_range(end=datetime.now(), periods=limit, freq='15T')
@@ -106,7 +111,7 @@ st.markdown("""
 <style>
 @keyframes pulse {0% { box-shadow: 0 0 0 0 rgba(0,255,0,0.6);} 70% { box-shadow:0 0 20px 10px rgba(0,255,0,0);} 100% {box-shadow:0 0 0 0 rgba(0,255,0,0);}}
 .pulse-green { animation: pulse 1.5s infinite; }
-.pulse-red { animation: pulse 1.5s infinite; }
+.pulse-red { animation: 1.5s infinite; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -164,12 +169,10 @@ else:
     st.sidebar.subheader("Escolha o mercado")
     market_choice = st.selectbox("Mercado:", ["Cripto (BTC/USDT)","Forex (EUR/USDT)"])
 
-    # Mensagem incentivando PRO
     st.info("⚠️ Para liberar mais criptomoedas e pares Forex, adquira a versão PRO!")
 
     # ----------------- BOT -----------------
     if st.button("▶️ Analisar mercado"):
-        # incrementa teste
         st.session_state["tests"] += 1
         cur.execute("UPDATE users SET tests_used=? WHERE id=?",
                     (st.session_state["tests"], st.session_state["user_id"]))
@@ -184,9 +187,8 @@ else:
         st.metric("Variação (%)", f"{diff*100:.2f}%")
         show_signal_alert(signal, confidence, 70)
         
-        placeholder_fig = st.empty()
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=df.index, y=df['close'], mode='lines', name='Preço Real'))
         fig.add_trace(go.Scatter(x=[df.index[-1], df.index[-1]+pd.Timedelta(minutes=15)],
                                  y=[last_price, pred_price], mode='lines+markers', name='Previsão'))
-        placeholder_fig.plotly_chart(fig,use_container_width=True)
+        st.plotly_chart(fig,use_container_width=True)
